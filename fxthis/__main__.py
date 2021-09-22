@@ -1,18 +1,16 @@
 import logging
-import re
 
-from telegram.ext import Updater, CommandHandler
+from telegram import InlineQueryResultVideo, InputTextMessageContent
+from telegram.ext import Updater, CommandHandler, InlineQueryHandler
 from telegram.ext.filters import MessageEntity
 
-from .webdriver import load_tweet_description
+from .webdriver import fetch_tweet_video_information
 from .error import FxThisError
 from . import config
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-
-twitter_url_regex = re.compile(r"http(?:s)?:\/\/(?:www.)?twitter\.com\/?")
 
 
 def parse_urls(message):
@@ -41,13 +39,17 @@ def fx(update, context):
             raise FxThisError("Só trabalho com links.")
 
         tweet_url = urls[0]
-        match = twitter_url_regex.search(tweet_url)
+        tweet = fetch_tweet_video_information(tweet_url)
 
-        if match is None:
+        if tweet is None:
             raise FxThisError("Isso não parece ser um link do Twitter.")
 
-        tweet_description = load_tweet_description(tweet_url)
         fixed_tweet_url = tweet_url.replace("twitter", "fxtwitter")
+        tweet_description = (
+            tweet.description
+            if not None
+            else "Não foi possível carregar o texto do tweet."
+        )
 
         update.message.reply_text(
             f"{fixed_tweet_url}\n\n{tweet_description}", quote=False
@@ -55,6 +57,45 @@ def fx(update, context):
 
     except FxThisError as err:
         update.message.reply_text(str(err), quote=True)
+
+
+def inline_query(update, context):
+    if update.inline_query is None:
+        return
+
+    query = update.inline_query.query
+
+    if query == "":
+        return
+
+    tweet = fetch_tweet_video_information(query)
+
+    if tweet is None:
+        return
+
+    if tweet.video_poster is None:
+        return
+
+    fixed_tweet_url = query.replace("twitter", "fxtwitter")
+    tweet_description = (
+        tweet.description if not None else "Não foi possível carregar o texto do tweet."
+    )
+
+    message_content = f"{fixed_tweet_url}\n\n{tweet_description}"
+
+    update.inline_query.answer(
+        [
+            InlineQueryResultVideo(
+                id="0",
+                video_url=query,
+                mime_type="text/html",
+                thumb_url=tweet.video_poster,
+                title=tweet.title,
+                description=tweet.description,
+                input_message_content=InputTextMessageContent(message_content),
+            ),
+        ]
+    )
 
 
 def error_handler(update, context):
@@ -66,6 +107,7 @@ def main():
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("fx", fx))
+    dispatcher.add_handler(InlineQueryHandler(inline_query))
     dispatcher.add_error_handler(error_handler)
 
     updater.start_polling()
