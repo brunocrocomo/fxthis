@@ -1,0 +1,2 @@
+class FxThisError(Exception):
+    pass

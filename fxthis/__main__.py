@@ -1,26 +1,18 @@
+import logging
 import re
 
 from telegram.ext import Updater, CommandHandler
 from telegram.ext.filters import MessageEntity
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-
+from .webdriver import load_tweet_description
+from .error import FxThisError
 from . import config
 
-
-options = Options()
-options.add_argument("--headless")
-driver = webdriver.Chrome(config.CHROME_DRIVER_PATH, options=options)
-
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 twitter_url_regex = re.compile(r"http(?:s)?:\/\/(?:www.)?twitter\.com\/?")
-
-TWEET_LOAD_TIMEOUT = 5
 
 
 def parse_urls(message):
@@ -36,42 +28,40 @@ def parse_urls(message):
 
 
 def fx(update, context):
-    assert update.message is not None
-
-    if update.message.reply_to_message is not None:
-        urls = parse_urls(update.message.reply_to_message)
-    else:
-        urls = parse_urls(update.message)
-
-    assert len(urls) > 0, "Sem link, sem trabalho."
-
-    tweet_url = urls[0]
-
-    match = twitter_url_regex.search(tweet_url)
-    assert match is not None, "Isso não parece ser um link do Twitter."
-
-    driver.get(tweet_url)
     try:
-        element = WebDriverWait(driver, TWEET_LOAD_TIMEOUT).until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//meta[@property='og:description']")
-            )
-        )
-        description = element.get_attribute("content")
-    except TimeoutException:
-        description = "Não foi possível carregar o texto do Tweet."
+        if update.message is None:
+            raise FxThisError("Não foi possível processar o comando /fx.")
 
-    fixed_tweet_url = tweet_url.replace("twitter", "fxtwitter")
-    update.message.reply_text(f"{fixed_tweet_url}\n\n{description}", quote=False)
+        if update.message.reply_to_message is not None:
+            urls = parse_urls(update.message.reply_to_message)
+        else:
+            urls = parse_urls(update.message)
+
+        if len(urls) <= 0:
+            raise FxThisError("Só trabalho com links.")
+
+        tweet_url = urls[0]
+        match = twitter_url_regex.search(tweet_url)
+
+        if match is None:
+            raise FxThisError("Isso não parece ser um link do Twitter.")
+
+        tweet_description = load_tweet_description(tweet_url)
+        fixed_tweet_url = tweet_url.replace("twitter", "fxtwitter")
+
+        update.message.reply_text(
+            f"{fixed_tweet_url}\n\n{tweet_description}", quote=False
+        )
+
+    except FxThisError as err:
+        update.message.reply_text(str(err), quote=True)
 
 
 def error_handler(update, context):
-    assert update.message is not None
-    update.message.reply_text(str(context.error), quote=True)
+    logging.error(str(context.error))
 
 
 def main():
-
     updater = Updater(config.TOKEN, use_context=True)
     dispatcher = updater.dispatcher
 
