@@ -4,8 +4,9 @@ from telegram import InlineQueryResultVideo, InputTextMessageContent
 from telegram.ext import Updater, CommandHandler, InlineQueryHandler
 from telegram.ext.filters import MessageEntity
 
-from .webdriver import fetch_tweet_video_information
-from .error import FxThisError
+from .api import tweet_lookup
+from .webdriver import fetch_tweet_from_webpage
+from .error import FxThisError, TwitterAPIError, WebDriverError
 from . import config
 
 logging.basicConfig(
@@ -39,21 +40,29 @@ def fx(update, context):
             raise FxThisError("Só trabalho com links.")
 
         tweet_url = urls[0]
-        tweet = fetch_tweet_video_information(tweet_url)
 
-        if tweet is None:
-            raise FxThisError("Isso não parece ser um link do Twitter.")
+        tweet = None
+
+        try:
+            tweet = tweet_lookup(tweet_url)
+        except TwitterAPIError as err:
+            logging.error(f"Twitter API Error ({err.status_code}): {err.response_json}")
+
+        if not tweet:
+            try:
+                logging.info("Fetching tweet information using webdriver.")
+                tweet = fetch_tweet_from_webpage(tweet_url)
+            except WebDriverError as err:
+                logging.error(err)
 
         fixed_tweet_url = tweet_url.replace("twitter", "fxtwitter")
-        tweet_description = (
-            tweet.description
-            if not None
-            else "Não foi possível carregar o texto do tweet."
-        )
 
-        update.message.reply_text(
-            f"{fixed_tweet_url}\n\n{tweet_description}", quote=False
-        )
+        if tweet:
+            reply_text = f"{fixed_tweet_url}\n\n{tweet.data.text}"
+        else:
+            reply_text = fixed_tweet_url
+
+        update.message.reply_text(reply_text, quote=False)
 
     except FxThisError as err:
         update.message.reply_text(str(err), quote=True)
@@ -68,20 +77,26 @@ def inline_query(update, context):
     if query == "":
         return
 
-    tweet = fetch_tweet_video_information(query)
+    tweet = None
+
+    try:
+        tweet = tweet_lookup(query)
+    except TwitterAPIError as err:
+        logging.error(f"Twitter API Error ({err.status_code}): {err.response_json}")
+
+    if not tweet:
+        try:
+            logging.info("Fetching tweet information using webdriver.")
+            tweet = fetch_tweet_from_webpage(query)
+        except WebDriverError as err:
+            logging.error(err)
 
     if tweet is None:
         return
 
-    if tweet.video_poster is None:
-        return
-
     fixed_tweet_url = query.replace("twitter", "fxtwitter")
-    tweet_description = (
-        tweet.description if not None else "Não foi possível carregar o texto do tweet."
-    )
 
-    message_content = f"{fixed_tweet_url}\n\n{tweet_description}"
+    message_content = f"{fixed_tweet_url}\n{tweet.data.text}"
 
     update.inline_query.answer(
         [
@@ -89,9 +104,9 @@ def inline_query(update, context):
                 id="0",
                 video_url=query,
                 mime_type="text/html",
-                thumb_url=tweet.video_poster,
-                title=tweet.title,
-                description=tweet.description,
+                thumb_url=tweet.includes.media[0].preview_image_url,
+                title=tweet.includes.users[0].name,
+                description=tweet.data.text,
                 input_message_content=InputTextMessageContent(message_content),
             ),
         ]
@@ -103,7 +118,7 @@ def error_handler(update, context):
 
 
 def main():
-    updater = Updater(config.TOKEN, use_context=True)
+    updater = Updater(config.TELEGRAM_BOT_TOKEN, use_context=True)
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("fx", fx))
