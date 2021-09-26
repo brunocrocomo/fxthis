@@ -9,6 +9,8 @@ license = "MIT"
 python = "^3.9"
 python-telegram-bot = "^13.7"
 selenium = "^3.141.0"
+requests = "^2.26.0"
+pydantic = "^1.8.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

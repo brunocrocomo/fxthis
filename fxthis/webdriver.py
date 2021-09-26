@@ -1,6 +1,3 @@
-import re
-from dataclasses import dataclass
-
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
@@ -8,11 +5,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+from .utils import parse_tweet_id
+from .error import WebDriverError
+from .dataclasses import Tweet, Data, Includes, User, Media
 from . import config
 
 TWEET_LOAD_TIMEOUT = 5
-
-twitter_url_regex = re.compile(r"http(?:s)?:\/\/(?:www.)?twitter\.com\/?")
 
 driver_options = Options()
 driver_options.headless = True
@@ -23,20 +21,13 @@ driver = webdriver.Firefox(
 )
 
 
-@dataclass
-class TweetVideoInformation:
-    title: str
-    description: str
-    video_poster: str
+def fetch_tweet_from_webpage(url):
+    tweet_id = parse_tweet_id(url)
 
+    if not url.startswith("http"):
+        url = "https://" + url
 
-def fetch_tweet_video_information(tweet_url):
-    match = twitter_url_regex.search(tweet_url)
-
-    if match is None:
-        return None
-
-    driver.get(tweet_url)
+    driver.get(url)
 
     try:
         element = WebDriverWait(driver, TWEET_LOAD_TIMEOUT).until(
@@ -44,24 +35,30 @@ def fetch_tweet_video_information(tweet_url):
                 (By.XPATH, "//meta[@property='og:description']")
             )
         )
-        tweet_description = element.get_attribute("content")
+        tweet_text = element.get_attribute("content")
     except TimeoutException:
-        tweet_description = None
+        raise WebDriverError("Não foi possível obter o texto do tweet")
 
     try:
         element = WebDriverWait(driver, TWEET_LOAD_TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, "//meta[@property='og:title']"))
         )
-        tweet_title = element.get_attribute("content")
+        tweet_user_name = element.get_attribute("content")
     except NoSuchElementException:
-        tweet_title = None
+        raise WebDriverError("Não foi possível obter o nome do autor do tweet")
 
     try:
         element = WebDriverWait(driver, TWEET_LOAD_TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, "//video"))
         )
-        tweet_video_poster = element.get_attribute("poster")
+        tweet_preview_image_url = element.get_attribute("poster")
     except NoSuchElementException:
-        tweet_video_poster = None
+        raise WebDriverError("Não foi possível obter a URL de preview do tweet")
 
-    return TweetVideoInformation(tweet_title, tweet_description, tweet_video_poster)
+    return Tweet(
+        data=Data(id=tweet_id, text=tweet_text),
+        includes=Includes(
+            users=[User(name=tweet_user_name)],
+            media=[Media(preview_image_url=tweet_preview_image_url)],
+        ),
+    )
