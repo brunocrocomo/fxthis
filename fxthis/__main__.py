@@ -96,7 +96,7 @@ def inline_query(update, context):
 
     fixed_tweet_url = query.replace("twitter", "fxtwitter")
 
-    message_content = f"{fixed_tweet_url}\n{tweet.data.text}"
+    message_content = f"{fixed_tweet_url}\n\n{tweet.data.text}"
 
     update.inline_query.answer(
         [
