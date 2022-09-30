@@ -55,7 +55,7 @@ def fx(update, context):
             except WebDriverError as err:
                 logging.error(err)
 
-        fixed_tweet_url = tweet_url.replace("twitter", "vxtwitter")
+        fixed_tweet_url = tweet_url.replace("twitter", "fxtwitter")
 
         if tweet:
             reply_text = f"{fixed_tweet_url}\n\n{tweet.data.text}"
@@ -94,7 +94,7 @@ def inline_query(update, context):
     if tweet is None:
         return
 
-    fixed_tweet_url = query.replace("twitter", "vxtwitter")
+    fixed_tweet_url = query.replace("twitter", "fxtwitter")
 
     message_content = f"{fixed_tweet_url}\n\n{tweet.data.text}"
 
