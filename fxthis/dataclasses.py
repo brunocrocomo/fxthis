@@ -11,6 +11,7 @@ class Attachments:
 class Data:
     id: str
     text: str
+    edit_history_tweet_ids: List[str]
     author_id: Optional[str] = None
     attachments: Optional[Attachments] = None
 
