@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fxthis"
-version = "0.1.0"
+version = "0.1.2"
 description = ""
 authors = ["Bruno Martins Crocomo <bruno.crocomo@gmail.com>"]
 license = "MIT"
